@@ -63,19 +63,14 @@ func main() {
 		}
 
 		filePath := os.Args[3]
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			fmt.Printf("error on reading file: %v", err)
-			os.Exit(1)
-		}
 
-		object, err := writeBlob(content)
+		object, err := writeBlob(filePath)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
 
-		fmt.Print(object)
+		fmt.Print(hexDump(object))
 	case "ls-tree":
 		if len(os.Args) != 4 {
 			fmt.Println("git ls-tree --name-only <tree-SHA1>")
@@ -103,6 +98,19 @@ func main() {
 		for _, entry := range entries {
 			fmt.Println(entry.name)
 		}
+	case "write-tree":
+		if len(os.Args) != 2 {
+			fmt.Println("git write-tree")
+			os.Exit(1)
+		}
+
+		object, err := writeTree(".")
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		fmt.Print(hexDump(object))
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)

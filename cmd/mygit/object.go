@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 func readObject(object string) ([]byte, error) {
@@ -26,6 +27,31 @@ func readObject(object string) ([]byte, error) {
 	return objectData, nil
 }
 
+func writeObject(objectData []byte) ([]byte, error) {
+	zippedData, err := zip(objectData)
+	if err != nil {
+		return nil, fmt.Errorf("error on zipping blob object: %v", err)
+	}
+
+	object := hash(objectData)
+	dir, file := splitDirFile(hexDump(object))
+	if err := os.Mkdir(filepath.Join(".git/objects", dir), 0644); err != nil && !os.IsExist(err) {
+		return nil, fmt.Errorf("error on creating object dir: %v", err)
+	}
+	f, err := os.OpenFile(filepath.Join(".git/objects", dir, file), os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("error on opening object file: %v", err)
+	}
+	defer f.Close()
+
+	_, err = io.CopyBuffer(f, bytes.NewReader(zippedData), make([]byte, 512))
+	if err != nil {
+		return nil, fmt.Errorf("error on writing object file: %v", err)
+	}
+
+	return object, nil
+}
+
 func readBlobContent(object string) (string, error) {
 	blob, err := readObject(object)
 	if err != nil {
@@ -40,30 +66,15 @@ func readBlobContent(object string) (string, error) {
 	return content, nil
 }
 
-func writeBlob(content []byte) (string, error) {
+func writeBlob(filePath string) ([]byte, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("error on reading file: %v", err)
+		os.Exit(1)
+	}
+
 	blob := blobObject(content)
-	hash := hashHex(blob)
-	zippedBlob, err := zip(blob)
-	if err != nil {
-		return "", fmt.Errorf("error on zipping blob object: %v", err)
-	}
-
-	dir, file := splitDirFile(hash)
-	if err := os.Mkdir(filepath.Join(".git/objects", dir), 0644); err != nil && !os.IsExist(err) {
-		return "", fmt.Errorf("error on creating object dir: %v", err)
-	}
-	f, err := os.OpenFile(filepath.Join(".git/objects", dir, file), os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
-	if err != nil {
-		return "", fmt.Errorf("error on opening object file: %v", err)
-	}
-	defer f.Close()
-
-	_, err = io.CopyBuffer(f, bytes.NewReader(zippedBlob), make([]byte, 512))
-	if err != nil {
-		return "", fmt.Errorf("error on writing object file: %v", err)
-	}
-
-	return hash, nil
+	return writeObject(blob)
 }
 
 func readTree(object string) ([]*TreeEntry, error) {
@@ -73,6 +84,63 @@ func readTree(object string) ([]*TreeEntry, error) {
 	}
 
 	return parseTree(treeData)
+}
+
+func writeTree(dir string) ([]byte, error) {
+	dirEntries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	treeEntires := make([]*TreeEntry, 0, len(dirEntries))
+
+	for _, dirEntry := range dirEntries {
+		if filepath.Join(dir, dirEntry.Name()) == ".git" || !dirEntry.IsDir() {
+			continue
+		}
+
+		object, err := writeTree(filepath.Join(dir, dirEntry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		treeEntires = append(treeEntires, &TreeEntry{
+			name: dirEntry.Name(),
+			hash: object,
+			mode: TreeEntryModeTree,
+		})
+	}
+
+	for _, dirEntry := range dirEntries {
+		if dirEntry.IsDir() {
+			continue
+		}
+
+		object, err := writeBlob(filepath.Join(dir, dirEntry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		treeEntires = append(treeEntires, &TreeEntry{
+			name: dirEntry.Name(),
+			hash: object,
+			mode: TreeEntryModeBlob,
+		})
+	}
+
+	sort.SliceStable(treeEntires, func(i, j int) bool {
+		return treeEntires[i].name < treeEntires[j].name
+	})
+
+	buf := make([]byte, 0)
+	for _, entry := range treeEntires {
+		buf = append(buf, entry.Bytes()...)
+	}
+
+	header := fmt.Sprintf("tree %d", len(buf))
+	headerBytes := append([]byte(header), 0)
+
+	treeData := append(headerBytes, buf...)
+
+	return writeObject(treeData)
 }
 
 func unzip(b []byte) ([]byte, error) {
@@ -125,6 +193,21 @@ type TreeEntry struct {
 	mode string
 }
 
+func (t *TreeEntry) Bytes() []byte {
+	buf := bytes.NewBuffer(nil)
+	buf.Write([]byte(t.mode))
+	buf.Write([]byte{'\x20'})
+	buf.Write([]byte(t.name))
+	buf.Write([]byte{'\x00'})
+	buf.Write([]byte(t.hash))
+	return buf.Bytes()
+}
+
+const (
+	TreeEntryModeBlob = "100644"
+	TreeEntryModeTree = "40000"
+)
+
 func parseTree(b []byte) ([]*TreeEntry, error) {
 	offset := bytes.IndexByte(b, 0) + 1
 	entries := make([]*TreeEntry, 0)
@@ -157,10 +240,13 @@ func parseTreeEntry(b []byte) (*TreeEntry, int, error) {
 	return entry, i + 21, nil
 }
 
-func hashHex(b []byte) string {
+func hash(b []byte) []byte {
 	h := sha1.Sum(b)
-	// hex dump
-	return fmt.Sprintf("%x", h)
+	return h[:]
+}
+
+func hexDump(b []byte) string {
+	return fmt.Sprintf("%x", b)
 }
 
 func splitDirFile(hex string) (string, string) {
