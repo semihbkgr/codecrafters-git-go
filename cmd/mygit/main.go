@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/zlib"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -57,13 +58,19 @@ func main() {
 			os.Exit(1)
 		}
 
-		content, err := unzip(b)
+		blob, err := unzip(b)
 		if err != nil {
 			fmt.Printf("error on unzipping object file: %v", err)
 			os.Exit(1)
 		}
 
-		fmt.Print(string(content))
+		content, err := parseBlobContent(blob)
+		if err != nil {
+			fmt.Printf("error on extracting blob file: %v", err)
+			os.Exit(1)
+		}
+
+		fmt.Print(content)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
@@ -84,4 +91,13 @@ func unzip(b []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func parseBlobContent(b []byte) (string, error) {
+	i := bytes.IndexByte(b, 0)
+	if i < 0 {
+		return "", errors.New("cannot extract blob content")
+	}
+
+	return string(b[i+1:]), nil
 }
