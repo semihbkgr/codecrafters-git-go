@@ -11,16 +11,25 @@ import (
 	"path/filepath"
 )
 
-func readBlob(object string) (string, error) {
+func readObject(object string) ([]byte, error) {
 	dir, file := splitDirFile(object)
 	b, err := os.ReadFile(filepath.Join(".git/objects", dir, file))
 	if err != nil {
-		return "", fmt.Errorf("error on reading object file: %v", err)
+		return nil, fmt.Errorf("error on reading object file: %v", err)
 	}
 
-	blob, err := unzip(b)
+	objectData, err := unzip(b)
 	if err != nil {
-		return "", fmt.Errorf("error on unzipping object file: %v", err)
+		return nil, fmt.Errorf("error on unzipping object file: %v", err)
+	}
+
+	return objectData, nil
+}
+
+func readBlobContent(object string) (string, error) {
+	blob, err := readObject(object)
+	if err != nil {
+		return "", err
 	}
 
 	content, err := parseBlobContent(blob)
@@ -55,6 +64,15 @@ func writeBlob(content []byte) (string, error) {
 	}
 
 	return hash, nil
+}
+
+func readTree(object string) ([]*TreeEntry, error) {
+	treeData, err := readObject(object)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseTree(treeData)
 }
 
 func unzip(b []byte) ([]byte, error) {
@@ -99,6 +117,44 @@ func blobObject(b []byte) []byte {
 	header := fmt.Sprintf("blob %d", len(b))
 	headerBytes := append([]byte(header), 0)
 	return append(headerBytes, b...)
+}
+
+type TreeEntry struct {
+	hash []byte
+	name string
+	mode string
+}
+
+func parseTree(b []byte) ([]*TreeEntry, error) {
+	offset := bytes.IndexByte(b, 0) + 1
+	entries := make([]*TreeEntry, 0)
+	for offset < len(b) {
+		entry, skipN, err := parseTreeEntry(b[offset:])
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse tree: %v", err)
+		}
+		entries = append(entries, entry)
+		offset += skipN
+	}
+	return entries, nil
+}
+
+func parseTreeEntry(b []byte) (*TreeEntry, int, error) {
+	i := bytes.IndexByte(b, 0)
+	if i < 0 {
+		return nil, 0, errors.New("cannot parse tree entry")
+	}
+	mode, name, found := bytes.Cut(b[:i], []byte(" "))
+	if !found {
+		return nil, 0, errors.New("cannot parse tree entry")
+	}
+	hash := b[i+1 : i+21]
+	entry := &TreeEntry{
+		hash: hash,
+		name: string(name),
+		mode: string(mode),
+	}
+	return entry, i + 21, nil
 }
 
 func hashHex(b []byte) string {

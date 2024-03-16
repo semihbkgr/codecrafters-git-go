@@ -32,7 +32,6 @@ func main() {
 		}
 
 		flag := os.Args[2]
-
 		if flag != "-p" {
 			fmt.Println("only -p flag is supported")
 			os.Exit(1)
@@ -44,7 +43,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		content, err := readBlob(objectHash)
+		content, err := readBlobContent(objectHash)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -53,12 +52,11 @@ func main() {
 		fmt.Print(content)
 	case "hash-object":
 		if len(os.Args) != 4 {
-			fmt.Println("git cat-file -w <filename>")
+			fmt.Println("git hash-object -w <filename>")
 			os.Exit(1)
 		}
 
 		flag := os.Args[2]
-
 		if flag != "-w" {
 			fmt.Println("only -w flag is supported")
 			os.Exit(1)
@@ -78,6 +76,33 @@ func main() {
 		}
 
 		fmt.Print(object)
+	case "ls-tree":
+		if len(os.Args) != 4 {
+			fmt.Println("git ls-tree --name-only <tree-SHA1>")
+			os.Exit(1)
+		}
+
+		flag := os.Args[2]
+		if flag != "--name-only" {
+			fmt.Println("--name-only flag is required")
+			os.Exit(1)
+		}
+
+		objectHash := os.Args[3]
+		if len(objectHash) != 40 {
+			fmt.Println("len of object hash must be 40")
+			os.Exit(1)
+		}
+
+		entries, err := readTree(objectHash)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		for _, entry := range entries {
+			fmt.Println(entry.name)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
