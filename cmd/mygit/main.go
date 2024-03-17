@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 )
@@ -118,13 +117,24 @@ func main() {
 			os.Exit(1)
 		}
 
-		commitObject := flag.String("p", "", "commit object")
-		message := flag.String("m", "", "commit message")
-		flag.Parse()
+		parent := ""
+		message := ""
+
+		i := 3
+		for i < len(os.Args)-1 {
+			flag := os.Args[i]
+			switch flag {
+			case "-p":
+				parent = os.Args[i+1]
+			case "-m":
+				message = os.Args[i+1]
+			}
+			i += 2
+		}
 
 		commit := Commit{
 			treeObject:   os.Args[2],
-			parentObject: *commitObject,
+			parentObject: parent,
 			author: User{
 				name:  "Scott Chacon",
 				email: "schacon@gmail.com",
@@ -133,7 +143,7 @@ func main() {
 				name:  "Scott Chacon",
 				email: "schacon@gmail.com",
 			},
-			message: *message,
+			message: message,
 		}
 
 		object, err := writeCommit(&commit)
