@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
@@ -105,6 +106,37 @@ func main() {
 		}
 
 		object, err := writeTree(".")
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		fmt.Print(hexDump(object))
+	case "commit-tree":
+		if len(os.Args) < 3 {
+			fmt.Println("git commit-tree <tree-SHA1> -p <commit-SHA1> -m <message>")
+			os.Exit(1)
+		}
+
+		commitObject := flag.String("p", "", "commit object")
+		message := flag.String("m", "", "commit message")
+		flag.Parse()
+
+		commit := Commit{
+			treeObject:   os.Args[2],
+			parentObject: *commitObject,
+			author: User{
+				name:  "Scott Chacon",
+				email: "schacon@gmail.com",
+			},
+			committer: User{
+				name:  "Scott Chacon",
+				email: "schacon@gmail.com",
+			},
+			message: *message,
+		}
+
+		object, err := writeCommit(&commit)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

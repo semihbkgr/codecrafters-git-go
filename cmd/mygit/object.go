@@ -135,12 +135,15 @@ func writeTree(dir string) ([]byte, error) {
 		buf = append(buf, entry.Bytes()...)
 	}
 
-	header := fmt.Sprintf("tree %d", len(buf))
-	headerBytes := append([]byte(header), 0)
+	header := fmt.Sprintf("tree %d\x00", len(buf))
 
-	treeData := append(headerBytes, buf...)
-
+	treeData := append([]byte(header), buf...)
 	return writeObject(treeData)
+}
+
+func writeCommit(commit *Commit) ([]byte, error) {
+	objectData := commit.Bytes()
+	return writeObject(objectData)
 }
 
 func unzip(b []byte) ([]byte, error) {
@@ -182,9 +185,8 @@ func parseBlobContent(b []byte) (string, error) {
 }
 
 func blobObject(b []byte) []byte {
-	header := fmt.Sprintf("blob %d", len(b))
-	headerBytes := append([]byte(header), 0)
-	return append(headerBytes, b...)
+	header := fmt.Sprintf("blob %d\x00", len(b))
+	return append([]byte(header), b...)
 }
 
 type TreeEntry struct {
@@ -238,6 +240,34 @@ func parseTreeEntry(b []byte) (*TreeEntry, int, error) {
 		mode: string(mode),
 	}
 	return entry, i + 21, nil
+}
+
+type Commit struct {
+	treeObject   string
+	parentObject string
+	author       User
+	committer    User
+	message      string
+}
+
+func (c *Commit) Bytes() []byte {
+	buf := bytes.NewBuffer(nil)
+	buf.WriteString(fmt.Sprintf("tree %s\n", c.treeObject))
+	if c.parentObject != "" {
+		buf.WriteString(fmt.Sprintf("parent %s\n", c.parentObject))
+	}
+	buf.WriteString(fmt.Sprintf("author %s %s\n", c.author.name, c.author.email))
+	buf.WriteString(fmt.Sprintf("committer %s %s\n", c.committer.name, c.committer.email))
+	buf.WriteString(fmt.Sprintf("\n%s\n", c.message))
+
+	header := fmt.Sprintf("commit %d\x00", buf.Len())
+
+	return append([]byte(header), buf.Bytes()...)
+}
+
+type User struct {
+	name  string
+	email string
 }
 
 func hash(b []byte) []byte {
